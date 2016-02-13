@@ -1,6 +1,6 @@
 <?php
 
-namespace codequalit\Composer\Script;
+namespace Med\Codequality\Composer\Script;
 
 use Composer\Script\Event;
 use Symfony\Component\Filesystem\Filesystem;
@@ -8,12 +8,9 @@ use Symfony\Component\Filesystem\Filesystem;
 class Hooks
 {
     const GIT_HOOK_PRECOMMIT = 'pre-commit';
-    const QUALITY_FIXER_FILE = 'fixPHPCsFile.ssh';
 
-    const GIT_HOOK_PATH      = '/../../../../../../../.git/hooks/';
-    const BIN_PATH           = '/../../../../../../../bin/';
+    const GIT_HOOK_PATH      = '/../../../../../.git/hooks/';
     const QUALITY_HOOK       = '/../../Resources/hooks/pre-commit.php';
-    const QUALITY_FIXER_PATH = '/../../Resources/scripts/';
 
     public static function setHooks(Event $event)
     {
@@ -39,11 +36,9 @@ class Hooks
 
         if ($gitHook !== $docHook) {
             file_put_contents($gitHookPath, $docHook);
+			exec("chmod +x ".$gitHookPath);
         }
 
-        $fixScript = @file_get_contents(self::getAbsolutePath(self::QUALITY_FIXER_PATH . self::QUALITY_FIXER_FILE));
-        $path      = self::getAbsolutePath(self::BIN_PATH . self::QUALITY_FIXER_FILE);
-        file_put_contents($path, $fixScript);
     }
 
     /**

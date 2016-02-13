@@ -7,7 +7,6 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\ProcessBuilder;
 use Symfony\Component\Console\Application;
-use Symfony\Component\Yaml\Parser;
 
 /**
  * This class provide several test to ensure the code quality
@@ -21,9 +20,9 @@ class CodeQualityTool extends Application
     protected $output;
     protected $input;
 
-    const PHP_FILES_IN_SRC = '/^src\/(.*)(\.php)$/';
-    const PHP_FILES_IN_APP = '/^app\/(.*)(\.php)$/';
-
+    const PHP_FILES_IN_SRC = '/^.*(\.php)$/';
+	const BIN_DIR = "vendor/bin";
+	
     public function __construct()
     {
         parent::__construct('Code Quality Tool', '1.0.0');
@@ -45,12 +44,14 @@ class CodeQualityTool extends Application
             return;
         }
 
-        $this->checkComposer($files);
+        //$this->checkComposer($files);
         $this->phpLint($files);
-        $this->ymlLint($files);
-        $this->codeStyle($files);
+        $this->jsonLint($files);
+        $this->codeStyleFixer($files);
+		$this->codeSnifferFixer($files);
         $this->codeStylePsr($files);
         $this->phPmd($files);
+		$this->unitTests();
 
         $output->writeln('<info>Good job!</info>');
         $output->writeln('<fg=white;options=bold;bg=red>###Prosodie Code Quality Tool: END###</fg=white;options=bold;bg=red>');
@@ -62,7 +63,7 @@ class CodeQualityTool extends Application
         $this->writeInfo('Fetching files');
 
         $output = array();
-        exec("git diff-index --name-status --diff-filter=ACM HEAD", $output);
+        exec("git diff --staged --name-status --diff-filter=ACM HEAD", $output);
 
         $output = array_map(function ($file) {
             return preg_replace('/^[A|C|M]\s*(.+)/', '$1', $file);
@@ -121,26 +122,26 @@ class CodeQualityTool extends Application
         }
     }
 
-    protected function ymlLint($files)
+    protected function jsonLint($files)
     {
         $this->writeln('__________________');
-        $this->writeInfo('Running YML Lint');
+        $this->writeInfo('Running JSON Lint');
 
-        $needle = '/(\.yml)$/';
+        $needle = '/(\.json)$/';
 
         foreach ($files as $file) {
             if (!preg_match($needle, $file)) {
                 continue;
             }
-
-            $parser = new Parser();
-            try {
-                $parser->parse(file_get_contents($file));
-            } catch (ParseException $e) {
+			$processBuilder = new ProcessBuilder(array('php', self::BIN_DIR.'/jsonlint', $file));
+			$process = $processBuilder->getProcess();
+			$process->run();
+			
+			if (!$process->isSuccessful()) {
                 $this->output->writeln(sprintf("ERROR IN FILE (%s)", $file));
-                $this->writeError($e->getMessage());
-
-                throw new Exception('There are some Yml syntax errors!');
+                $this->writeError($process->getErrorOutput());
+                $this->writeInfo($process->getOutput());
+                throw new Exception('There are some JSON syntax errors!');
             }
         }
     }
@@ -155,7 +156,7 @@ class CodeQualityTool extends Application
         $files = $this->filterFiles($files, array(self::PHP_FILES_IN_SRC));
 
         foreach ($files as $file) {
-            $processBuilder = new ProcessBuilder(['php', 'bin/phpmd', $file, 'text', 'controversial']);
+            $processBuilder = new ProcessBuilder(['php', self::BIN_DIR.'/phpmd', $file, 'text', 'controversial', 'unusedcode']);
             $processBuilder->setWorkingDirectory($rootPath);
             $process = $processBuilder->getProcess();
             $process->setTimeout(null);
@@ -171,16 +172,17 @@ class CodeQualityTool extends Application
         }
     }
 
-    protected function codeStyle(array $files)
+    protected function codeStyleFixer(array $files)
     {
         $this->writeInfo('___________________');
-        $this->writeInfo('Checking Symfony code style');
+        $this->writeInfo('Checking with PHP-CS-FIXER');
 
-        $files = $this->filterFiles($files, array(self::PHP_FILES_IN_SRC, self::PHP_FILES_IN_APP));
-
+        $files = $this->filterFiles($files, array(self::PHP_FILES_IN_SRC));
+		
+		$fixers = 'eof_ending,indentation,linefeed,lowercase_keywords,trailing_spaces,short_tag,php_closing_tag,extra_empty_lines,elseif,function_declaration';
+		
         foreach ($files as $file) {
-            $commandLineOptions = array('bin/php-cs-fixer', '--verbose', 'fix', $file, '--level=symfony', '--fixers=-unused_use', '--config=sf23', '--dry-run');
-
+            $commandLineOptions = array('php', self::BIN_DIR.'/php-cs-fixer', '--verbose', 'fix', $file, '--level=psr2', '--fixers='.$fixers);
             $processBuilder = new ProcessBuilder($commandLineOptions);
 
             $processBuilder->setWorkingDirectory(__DIR__ . '/../../');
@@ -192,23 +194,35 @@ class CodeQualityTool extends Application
                 $this->output->writeln(sprintf("ERROR IN FILE (%s)", $file));
                 $this->writeError($process->getErrorOutput());
                 $this->writeInfo($process->getOutput());
-
-                //we remove --dry-run
-                array_pop($commandLineOptions);
-
-                throw new Exception(sprintf(
-                    'There are php-cs-fixer coding standards violations!%srun the following commands to check them, remove (--dry-run) to fix them!! %s%s%s',
-                    PHP_EOL,
-                    PHP_EOL,
-                    PHP_EOL,
-                    join(PHP_EOL, array_map(function($file) {
-                        return sprintf('./bin/fixPHPCsFile.ssh %s', $file);
-                    }, $files))
-                ));
             }
         }
+		
+		$this->stageFiles($files);
+		
     }
 
+	protected function codeSnifferFixer(array $files)
+    {
+        $this->writeln('________________________________');
+        $this->writeInfo('Fixing files with PHPCBF');
+
+        $files = $this->filterFiles($files, array(self::PHP_FILES_IN_SRC));
+
+        foreach ($files as $file) {
+            $commandLineOptions = array('php', self::BIN_DIR.'/phpcbf', '--standard=PSR2', '-n', $file);
+
+            $processBuilder = new ProcessBuilder($commandLineOptions);
+            $processBuilder->setWorkingDirectory(__DIR__ . '/../../');
+            $process = $processBuilder->getProcess();
+            $process->setTimeout(null);
+            $process->run();
+        
+			$this->writeInfo($process->getOutput());
+        }
+		
+		$this->stageFiles($files);
+    }
+	
     protected function codeStylePsr(array $files)
     {
         $this->writeln('________________________________');
@@ -217,7 +231,7 @@ class CodeQualityTool extends Application
         $files = $this->filterFiles($files, array(self::PHP_FILES_IN_SRC));
 
         foreach ($files as $file) {
-            $commandLineOptions = array('bin/phpcs', '--standard=PSR2', '-n', $file);
+            $commandLineOptions = array('php', self::BIN_DIR.'/phpcs', '--standard=PSR2', '-n', $file);
 
             $processBuilder = new ProcessBuilder($commandLineOptions);
             $processBuilder->setWorkingDirectory(__DIR__ . '/../../');
@@ -238,7 +252,40 @@ class CodeQualityTool extends Application
             }
         }
     }
+	
+	protected function unitTests()
+    {
+		$this->writeln('________________________________');
+        $this->writeInfo('Execution of unit tests');
+        $processBuilder = new ProcessBuilder(array('phpunit', '--testsuite', 'unitaire', '--stderr'));
+        $processBuilder->setWorkingDirectory(__DIR__ . '/../..');
+        $processBuilder->setTimeout(3600);
+        $phpunit = $processBuilder->getProcess();
+ 
+        $phpunit->run(function ($type, $buffer) {
+            $this->output->write($buffer);
+        });
+ 
+        if(!$phpunit->isSuccessful()) {
+			throw new Exception(sprintf('Failed to run unit tests!'));
+		}
+    }
 
+	/**
+	* stage files for commit after changes
+	*/
+	protected function stageFiles($files)
+	{
+		foreach ($files as $file) {
+            $commandLineOptions = array('git', 'add', $file);
+
+            $processBuilder = new ProcessBuilder($commandLineOptions);
+            $processBuilder->setWorkingDirectory(__DIR__ . '/../../');
+            $process = $processBuilder->getProcess();
+            $process->setTimeout(null);
+            $process->run();
+		}
+	}
     /**
      * @param  string $msg
      *

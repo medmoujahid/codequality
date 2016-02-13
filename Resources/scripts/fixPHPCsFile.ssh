@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+bin/php-cs-fixer --verbose fix $1 --level=symfony --fixers=-unused_use --config=sf23

@@ -22,7 +22,7 @@ The first step is to add the repo to your composer.json
 ```json
   "repositories": {
     	"med/codequelity": {
-    		"url": "git@github.com:medmoujahid/codequality.git",
+    		"url": "https://github.com/medmoujahid/codequality.git",
     		"type":"git"
     	}
     },

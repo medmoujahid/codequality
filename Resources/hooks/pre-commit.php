@@ -257,7 +257,7 @@ class CodeQualityTool extends Application
     {
 		$this->writeln('________________________________');
         $this->writeInfo('Execution of unit tests');
-        $processBuilder = new ProcessBuilder(array('phpunit', '--testsuite', 'unitaire', '--stderr'));
+        $processBuilder = new ProcessBuilder(array('php', self::BIN_DIR.'/phpunit', '--testsuite', 'unitaire', '--stderr'));
         $processBuilder->setWorkingDirectory(__DIR__ . '/../..');
         $processBuilder->setTimeout(3600);
         $phpunit = $processBuilder->getProcess();

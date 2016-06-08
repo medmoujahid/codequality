@@ -10,7 +10,7 @@
     "keywords": ["phpmd","php cs fixer", "php code sniffer", "php lint", "json lint"],
 	"require": {
 		"php": ">=5.3.9",
-	    "phpunit/phpunit": "4.8.*",
+	    "phpunit/phpunit": "5.4.*",
         "phpmd/phpmd" : "2.2.*",
         "fabpot/php-cs-fixer": "1.1",
         "squizlabs/php_codesniffer": "2.*",
